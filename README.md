@@ -6,7 +6,11 @@ To build this project, you need:
 - a C compiler that supports C99;
 - Raylib installed on your system (see [this guide](https://example.com)).
 
-On MacOS, you can use the following command to
+On MacOS, you can use the following command to compile:
+
+```bash
+mkdir -p out && cc -std=c99 main.c $(pkg-config --libs --cflags raylib) -o out/Letters
+```
 
 # Progress
 
