@@ -15,7 +15,7 @@ mkdir -p out && cc -std=c99 main.c $(pkg-config --libs --cflags raylib) -o out/L
 # Progress
 
 - [x] Basic UTF8 character displaying and rendering
-- [ ] Multi-character selection with mouse and keyboard
+- [x] Multi-character selection with mouse and keyboard
 - [ ] Handling actions on selection (replace, delete)
 - [ ] Supporting copy/paste
 - [ ] Read/write from/to files
