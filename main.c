@@ -8,6 +8,7 @@
 #define LRS_GREEN ((Color){ 55, 117, 0, 255 })
 
 #define SPACING 0
+#define FONT_SIZE 16
 
 typedef struct {
     int x;
@@ -519,8 +520,8 @@ int main() {
     SetTextLineSpacing(0);
 
     LrsState state = {
-        .font = LoadFontEx("assets/DMMono-Regular.ttf", 20, 0, 250),
-        .font_size = 20,
+        .font = LoadFontEx("assets/DMMono-Regular.ttf", FONT_SIZE * 2, 0, 250),
+        .font_size = FONT_SIZE,
         .textbox_padding = 4,
         .dirty = true,
         .selecting = false,
