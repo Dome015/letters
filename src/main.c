@@ -217,7 +217,7 @@ void LrsInsertBytes(LrsState* state, int offset, char* bytes, int size) {
 }
 
 void LrsMoveCaret(LrsState* state, int target_offset, bool set_selection) {
-    if (target_offset < 0 || target_offset >= state->byte_count) {
+    if (target_offset < 0 || target_offset > state->byte_count) {
         return;
     }
     if (!set_selection) {
@@ -350,7 +350,6 @@ void LrsUpdateState(LrsState* state) {
     // Update selection
     if (state->selecting) {
         int mouse_offset = LrsGetOffsetFromCharPos(*state, state->mouse_char_pos);
-        printf("Selection offset: %d\n", mouse_offset);
         if (mouse_offset < state->selection_start_offset) {
             state->selection_offset_range = (IntRange){ mouse_offset, state->selection_start_offset };
         } else {
@@ -363,6 +362,7 @@ void LrsUpdateState(LrsState* state) {
     if (state->mouse_char_pos.x != -1) {
         if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
             int mouse_offset = LrsGetOffsetFromCharPos(*state, state->mouse_char_pos);
+            printf("Mouse offset: %d, byte count: %d\n", mouse_offset, state->byte_count);
             LrsMoveCaret(state, mouse_offset, state->selecting || shift_pressed);
             if (!state->selecting) {
                 state->selecting = true;
