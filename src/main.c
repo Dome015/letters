@@ -8,7 +8,7 @@
 #define LRS_GREEN ((Color){ 55, 117, 0, 255 })
 
 #define SPACING 0
-#define FONT_SIZE 16
+#define FONT_SIZE 18
 
 typedef struct {
     int x;
@@ -102,6 +102,17 @@ int LrsUTF8CharSize(char character) {
 // Checks for a continuation byte with the 10xxxxxx pattern
 bool LrsUTF8IsContinuationByte(char c) {
     return (c & 0xC0) == 0x80;
+}
+
+// Counts the number of UTF8 characters included in the provided bytes buffer
+int LrsUTF8CharCount(char* bytes, int size) {
+    int count = 0;
+    for (int i = 0; i < size; i++) {
+        if (!LrsUTF8IsContinuationByte(bytes[i])) {
+            count += 1;
+        }
+    }
+    return count;
 }
 
 int LrsUTF8StrLen(char* str) {
@@ -214,6 +225,33 @@ void LrsInsertBytes(LrsState* state, int offset, char* bytes, int size) {
     state->byte_count += size;
     state->char_count += chars_processed;
     state->dirty = true;
+}
+
+void LrsReplaceBytes(LrsState* state, int offset, int replaced_size, char* bytes, int size) {
+    // If the replaced size is greater than the replacement, we need to shift the following
+    // bytes backwards; otherwise, we need to shift them forward
+    int replace_end_offset = offset + replaced_size;
+    if (replaced_size > size) {
+        int shift_count = replaced_size - size;
+        for (int i = replace_end_offset - shift_count; i <= state->byte_count - shift_count; i++) {
+            state->text[i] = state->text[i + shift_count];
+        }
+    } else {
+        int shift_count = size - replaced_size;
+        for (int i = state->byte_count + shift_count; i >= replace_end_offset + shift_count; i--) {
+            state->text[i] = state->text[i - shift_count];
+        }
+    }
+    // Insert the new text
+    for (int i = 0; i < size; i++) {
+        state->text[offset + i] = bytes[i];
+    }
+    // Update the byte count
+    state->byte_count += size - replaced_size;
+    // Compute the new char count
+    int replaced_char_count = LrsUTF8CharCount(&(state->text[offset]), replaced_size);
+    int replacement_char_count = LrsUTF8CharCount(bytes, size);
+    state->char_count += replacement_char_count - replaced_char_count;
 }
 
 void LrsMoveCaret(LrsState* state, int target_offset, bool set_selection) {
@@ -447,6 +485,11 @@ void LrsUpdateState(LrsState* state) {
             LrsInsertBytes(state, state->caret_offset, "\n", 1);
             LrsMoveCaret(state, state->caret_offset + 1, false);
         } break;
+        case KEY_F1: {
+            // Test key, used to mess around
+            LrsReplaceBytes(state, state->selection_offset_range.start, state->selection_offset_range.end - state->selection_offset_range.start, "pippò", 6);
+            LrsMoveCaret(state, state->selection_offset_range.start + 5, false);
+        } break;
         default:
             break;
         }
@@ -456,8 +499,18 @@ void LrsUpdateState(LrsState* state) {
     while ((pressed_char = GetCharPressed()) != 0) {
         char to_add[4];
         int byte_count = LrsUTF8Encode(pressed_char, to_add);
-        LrsInsertBytes(state, state->caret_offset, to_add, byte_count);
-        state->caret_offset += byte_count;
+        if ((state->selection_offset_range.end - state->selection_offset_range.start) > 0) {
+            LrsReplaceBytes(
+                state,
+                state->selection_offset_range.start,
+                state->selection_offset_range.end - state->selection_offset_range.start,
+                to_add,
+                byte_count);
+            LrsMoveCaret(state, state->selection_offset_range.start + byte_count, false);
+        } else {
+            LrsInsertBytes(state, state->caret_offset, to_add, byte_count);
+            LrsMoveCaret(state, state->caret_offset + byte_count, false);
+        }
     }
 }
 
