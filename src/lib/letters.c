@@ -21,6 +21,7 @@ LrsState LrsGetInitialState() {
         .selection_offset_range = (IntRange){ 0, 0 },
         .preferred_line_char = 0,
         .textbox_rect = (Rectangle){ 0 },
+        .blink_start = GetTime()
     };
 }
 
@@ -146,6 +147,8 @@ void LrsReplaceBytes(LrsState* state, int offset, int replaced_size, char* bytes
 // Move cate to the specified target offset. If the flag is activated, the current selection is
 // extended to the new caret position.
 void LrsMoveCaret(LrsState* state, int target_offset, bool set_selection) {
+    // Reset blinking animation
+    state->blink_start = GetTime();
     if (target_offset < 0 || target_offset > state->byte_count) {
         return;
     }
@@ -214,6 +217,92 @@ int LrsDeleteCharsBack(LrsState* state, int offset, int count) {
     state->char_count -= count;
     state->dirty = true;
     return deleted_size;
+}
+
+// Checks whether a key is being pressed (either for the first time or held down).
+bool LrsIsKeyPressed(int key) {
+    return IsKeyPressed(key) || IsKeyPressedRepeat(key);
+}
+
+// Handles key inputs (DEL/BACKSPACE/ARROW KEYS...) and updates the state accordingly
+void LrsHandleKeyInput(LrsState* state) {
+    bool shift_pressed = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+    int pressed_key;
+    bool selection_present = state->selection_offset_range.end - state->selection_offset_range.start > 0;
+    // We need to keep track of whether a certain key is being held down for long. If that's the case,
+    // it is equivalent to pressing it repeatedly.
+    if (LrsIsKeyPressed(KEY_LEFT)) {
+        bool start_reached = state->caret_offset == 0;
+        int char_size = start_reached ? 0 : LrsUTF8PrevCharSize(state->text, state->caret_offset);
+        int target_offset = (selection_present && !shift_pressed) ?
+            state->selection_offset_range.start : state->caret_offset - char_size;
+        LrsMoveCaret(state, target_offset, shift_pressed);
+    }
+    if (LrsIsKeyPressed(KEY_RIGHT)) {
+        bool end_reached = state->caret_offset == state->lines[state->line_count - 1].start + state->lines[state->line_count - 1].length;
+        int char_size = end_reached ? 0 : LrsUTF8CharSize(state->text[state->caret_offset]);
+        int target_offset = (selection_present && !shift_pressed) ?
+            state->selection_offset_range.end : state->caret_offset + char_size;
+        LrsMoveCaret(state, target_offset, shift_pressed);
+        LineInfo caret_line = LrsGetLineFromPos(*state, state->caret_offset);
+        int caret_line_offset = state->caret_offset - caret_line.start;
+        state->preferred_line_char = caret_line_offset;
+    }
+    if (LrsIsKeyPressed(KEY_UP)) {
+        int offset = shift_pressed ? state->caret_offset : state->selection_offset_range.start;
+        int offset_line_index = LrsGetLineIndexFromPos(*state, offset);
+        LineInfo offset_line = state->lines[offset_line_index];
+        int offset_line_offset = offset - offset_line.start;
+        int offset_line_char = LrsGetLineCharCountFromOffset(state->text, offset_line, offset_line_offset);
+        int target_offset = 0;
+        if (offset_line_index != 0) {
+            LineInfo prev_line = state->lines[offset_line_index - 1];
+            if (prev_line.char_length >= offset_line_char) {
+                target_offset = prev_line.start + LrsGetLineOffsetFromCharCount(state->text, prev_line, offset_line_char);
+            } else {
+                state->preferred_line_char = offset_line_char;
+                target_offset = offset_line.start - 1;
+            }
+        }
+        LrsMoveCaret(state, target_offset, shift_pressed);
+    }
+    if (LrsIsKeyPressed(KEY_DOWN)) {
+        int caret_line_index = LrsGetLineIndexFromPos(*state, state->caret_offset);
+        LineInfo caret_line = state->lines[caret_line_index];
+        int caret_line_offset = state->caret_offset - caret_line.start;
+        int caret_line_char = LrsGetLineCharCountFromOffset(state->text, caret_line, caret_line_offset);
+        int target_offset = caret_line.start + caret_line.length;
+        if (caret_line_index != state->line_count - 1) {
+            LineInfo next_line = state->lines[caret_line_index + 1];
+            if (next_line.char_length >= caret_line_char) {
+                target_offset = next_line.start + LrsGetLineOffsetFromCharCount(state->text, next_line, caret_line_char);
+            } else {
+                state->preferred_line_char = caret_line_char;
+                target_offset = next_line.start + next_line.length;
+            }
+        }
+        LrsMoveCaret(state, target_offset, shift_pressed);
+    }
+    if (LrsIsKeyPressed(KEY_BACKSPACE)) {
+        if (state->caret_offset != 0) {
+            int deleted_bytes = LrsDeleteCharsBack(state, state->caret_offset, 1);
+            LrsMoveCaret(state, state->caret_offset - deleted_bytes, false);
+        }
+    }
+    if (LrsIsKeyPressed(KEY_DELETE)) {
+        if (state->caret_offset == state->byte_count) {
+            LrsDeleteCharsForward(state, state->caret_offset, 1);
+        }
+    }
+    if (LrsIsKeyPressed(KEY_ENTER)) {
+        LrsInsertBytes(state, state->caret_offset, "\n", 1);
+        LrsMoveCaret(state, state->caret_offset + 1, false);
+    }
+    if (LrsIsKeyPressed(KEY_F1)) {
+        // Test key, used to mess around
+        LrsReplaceBytes(state, state->selection_offset_range.start, state->selection_offset_range.end - state->selection_offset_range.start, "pippò", 6);
+        LrsMoveCaret(state, state->selection_offset_range.start + 5, false);
+    }
 }
 
 // Update the editor state
@@ -301,89 +390,7 @@ void LrsUpdateState(LrsState* state) {
         state->selecting = false;
     }
     // Handle pressed keys
-    int pressed_key;
-    bool selection_present = state->selection_offset_range.end - state->selection_offset_range.start > 0;
-    while ((pressed_key = GetKeyPressed()) != 0) {
-        switch (pressed_key) {
-        // Arrow keys to move the caret
-        case KEY_LEFT: {
-            bool start_reached = state->caret_offset == 0;
-            int char_size = start_reached ? 0 : LrsUTF8PrevCharSize(state->text, state->caret_offset);
-            int target_offset = (selection_present && !shift_pressed) ?
-                state->selection_offset_range.start : state->caret_offset - char_size;
-            LrsMoveCaret(state, target_offset, shift_pressed);
-        } break;
-        case KEY_RIGHT: {
-            bool end_reached = state->caret_offset == state->lines[state->line_count - 1].start + state->lines[state->line_count - 1].length;
-            int char_size = end_reached ? 0 : LrsUTF8CharSize(state->text[state->caret_offset]);
-            int target_offset = (selection_present && !shift_pressed) ?
-                state->selection_offset_range.end : state->caret_offset + char_size;
-            LrsMoveCaret(state, target_offset, shift_pressed);
-            LineInfo caret_line = LrsGetLineFromPos(*state, state->caret_offset);
-            int caret_line_offset = state->caret_offset - caret_line.start;
-            state->preferred_line_char = caret_line_offset;
-        } break;
-        case KEY_UP: {
-            int offset = shift_pressed ? state->caret_offset : state->selection_offset_range.start;
-            int offset_line_index = LrsGetLineIndexFromPos(*state, offset);
-            LineInfo offset_line = state->lines[offset_line_index];
-            int offset_line_offset = offset - offset_line.start;
-            int offset_line_char = LrsGetLineCharCountFromOffset(state->text, offset_line, offset_line_offset);
-            int target_offset = 0;
-            if (offset_line_index != 0) {
-                LineInfo prev_line = state->lines[offset_line_index - 1];
-                if (prev_line.char_length >= offset_line_char) {
-                    target_offset = prev_line.start + LrsGetLineOffsetFromCharCount(state->text, prev_line, offset_line_char);
-                } else {
-                    state->preferred_line_char = offset_line_char;
-                    target_offset = offset_line.start - 1;
-                }
-            }
-            LrsMoveCaret(state, target_offset, shift_pressed);
-        } break;
-        case KEY_DOWN: {
-            int caret_line_index = LrsGetLineIndexFromPos(*state, state->caret_offset);
-            LineInfo caret_line = state->lines[caret_line_index];
-            int caret_line_offset = state->caret_offset - caret_line.start;
-            int caret_line_char = LrsGetLineCharCountFromOffset(state->text, caret_line, caret_line_offset);
-            int target_offset = caret_line.start + caret_line.length;
-            if (caret_line_index != state->line_count - 1) {
-                LineInfo next_line = state->lines[caret_line_index + 1];
-                if (next_line.char_length >= caret_line_char) {
-                    target_offset = next_line.start + LrsGetLineOffsetFromCharCount(state->text, next_line, caret_line_char);
-                } else {
-                    state->preferred_line_char = caret_line_char;
-                    target_offset = next_line.start + next_line.length;
-                }
-            }
-            LrsMoveCaret(state, target_offset, shift_pressed);
-        } break;
-        case KEY_BACKSPACE: {
-            if (state->caret_offset == 0) {
-                break;
-            }
-            int deleted_bytes = LrsDeleteCharsBack(state, state->caret_offset, 1);
-            LrsMoveCaret(state, state->caret_offset - deleted_bytes, false);
-        } break;
-        case KEY_DELETE: {
-            if (state->caret_offset == state->byte_count) {
-                break;
-            }
-            LrsDeleteCharsForward(state, state->caret_offset, 1);
-        } break;
-        case KEY_ENTER: {
-            LrsInsertBytes(state, state->caret_offset, "\n", 1);
-            LrsMoveCaret(state, state->caret_offset + 1, false);
-        } break;
-        case KEY_F1: {
-            // Test key, used to mess around
-            LrsReplaceBytes(state, state->selection_offset_range.start, state->selection_offset_range.end - state->selection_offset_range.start, "pippò", 6);
-            LrsMoveCaret(state, state->selection_offset_range.start + 5, false);
-        } break;
-        default:
-            break;
-        }
-    }
+    LrsHandleKeyInput(state);
     // Type characters
     int pressed_char;
     while ((pressed_char = GetCharPressed()) != 0) {
@@ -435,7 +442,7 @@ void LrsDrawTextBox(LrsState state) {
     int caret_char_offset = LrsGetLineCharCountFromOffset(state.text, state.lines[line_number], state.caret_offset - state.lines[line_number].start);
     int caret_x = state.char_size.x * caret_char_offset;
     int caret_w = state.char_size.x * 0.4;
-    bool blink = sin(8 * GetTime()) > 0;
+    bool blink = sin(8 * (GetTime() - state.blink_start)) > 0;
     if (state.selecting || blink) {
         DrawRectangle(state.textbox_padding + caret_x, state.textbox_padding + caret_y, caret_w, state.char_size.y, BLACK);
     }
@@ -453,5 +460,5 @@ void LrsDrawBottomBar(LrsState state) {
         }
     }
     //DrawTextEx(state.font, TextFormat("Selection range: (%d, %d)", state.selection_offset_range.start, state.selection_offset_range.end), (Vector2) { 4, h - 28 }, 24, SPACING, WHITE);
-    DrawTextEx(state.font, TextFormat("Selection start offset: %d", state.selection_start_offset), (Vector2) { 4, h - 28 }, 24, SPACING, WHITE);
+    DrawTextEx(state.font, TextFormat("Blink start: %f", state.blink_start), (Vector2) { 4, h - 28 }, 24, SPACING, WHITE);
 }

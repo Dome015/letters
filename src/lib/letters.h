@@ -38,6 +38,7 @@ typedef struct LrsState {
     int char_count;
     int preferred_line_char;
     Rectangle textbox_rect;
+    double blink_start;
 } LrsState;
 
 // Creates and initializes a new state, returning it
@@ -65,6 +66,10 @@ int LrsDeleteCharsForward(LrsState* state, int offset, int count);
 // Deletes the specified number of VISIBLE characters going backwards from the specified offset.
 // Returns the number of deleted bytes.
 int LrsDeleteCharsBack(LrsState* state, int offset, int count);
+// Checks whether a key is being pressed (either for the first time or held down).
+bool LrsIsKeyPressed(int key);
+// Handles key inputs (DEL/BACKSPACE/ARROW KEYS...) and updates the state accordingly
+void LrsHandleKeyInput(LrsState* state);
 // Update the editor state
 void LrsUpdateState(LrsState* state);
 // Draw the text box of the editor
