@@ -226,19 +226,23 @@ bool LrsIsKeyPressed(int key) {
 
 // Handles key inputs (DEL/BACKSPACE/ARROW KEYS...) and updates the state accordingly
 void LrsHandleKeyInput(LrsState* state) {
+    // For now, we use mac-specific key bindings for text navigation. Windows support could come
+    // in the future.
     bool shift_pressed = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+    bool ctrl_pressed = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+    bool cmd_pressed = IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER);
     int pressed_key;
     bool selection_present = state->selection_offset_range.end - state->selection_offset_range.start > 0;
     // We need to keep track of whether a certain key is being held down for long. If that's the case,
     // it is equivalent to pressing it repeatedly.
-    if (LrsIsKeyPressed(KEY_LEFT)) {
+    if (LrsIsKeyPressed(KEY_LEFT) || (ctrl_pressed && LrsIsKeyPressed(KEY_B))) {
         bool start_reached = state->caret_offset == 0;
         int char_size = start_reached ? 0 : LrsUTF8PrevCharSize(state->text, state->caret_offset);
         int target_offset = (selection_present && !shift_pressed) ?
             state->selection_offset_range.start : state->caret_offset - char_size;
         LrsMoveCaret(state, target_offset, shift_pressed);
     }
-    if (LrsIsKeyPressed(KEY_RIGHT)) {
+    if (LrsIsKeyPressed(KEY_RIGHT) || (ctrl_pressed && LrsIsKeyPressed(KEY_F))) {
         bool end_reached = state->caret_offset == state->lines[state->line_count - 1].start + state->lines[state->line_count - 1].length;
         int char_size = end_reached ? 0 : LrsUTF8CharSize(state->text[state->caret_offset]);
         int target_offset = (selection_present && !shift_pressed) ?
@@ -248,7 +252,7 @@ void LrsHandleKeyInput(LrsState* state) {
         int caret_line_offset = state->caret_offset - caret_line.start;
         state->preferred_line_char = caret_line_offset;
     }
-    if (LrsIsKeyPressed(KEY_UP)) {
+    if (LrsIsKeyPressed(KEY_UP) || (ctrl_pressed && LrsIsKeyPressed(KEY_P))) {
         int offset = shift_pressed ? state->caret_offset : state->selection_offset_range.start;
         int offset_line_index = LrsGetLineIndexFromPos(*state, offset);
         LineInfo offset_line = state->lines[offset_line_index];
@@ -266,7 +270,7 @@ void LrsHandleKeyInput(LrsState* state) {
         }
         LrsMoveCaret(state, target_offset, shift_pressed);
     }
-    if (LrsIsKeyPressed(KEY_DOWN)) {
+    if (LrsIsKeyPressed(KEY_DOWN) || (ctrl_pressed && LrsIsKeyPressed(KEY_N))) {
         int caret_line_index = LrsGetLineIndexFromPos(*state, state->caret_offset);
         LineInfo caret_line = state->lines[caret_line_index];
         int caret_line_offset = state->caret_offset - caret_line.start;
@@ -282,6 +286,27 @@ void LrsHandleKeyInput(LrsState* state) {
             }
         }
         LrsMoveCaret(state, target_offset, shift_pressed);
+    }
+    if (cmd_pressed && LrsIsKeyPressed(KEY_LEFT)) {
+        int caret_line_index = LrsGetLineIndexFromPos(*state, state->caret_offset);
+        LineInfo caret_line = state->lines[caret_line_index];
+        int first_non_whitespace_offset = 0;
+        while (isspace(state->text[caret_line.start + first_non_whitespace_offset]) && first_non_whitespace_offset < caret_line.length) {
+            first_non_whitespace_offset += 1;
+        }
+        // In case the line is either empty or contains no non-whitespace characters,
+        // we only want to travel to its start.
+        if (first_non_whitespace_offset == caret_line.length) {
+            first_non_whitespace_offset = 0;
+        }
+        int target_offset = caret_line.start + first_non_whitespace_offset;
+        // If the caret is already at the first non-whitespace character, move it to
+        // the beginning of the line, and viceversa.
+        if (state->caret_offset == target_offset) {
+            LrsMoveCaret(state, caret_line.start, shift_pressed);
+        } else {
+            LrsMoveCaret(state, target_offset, shift_pressed);
+        }
     }
     if (LrsIsKeyPressed(KEY_BACKSPACE)) {
         if (state->caret_offset != 0) {
@@ -302,6 +327,46 @@ void LrsHandleKeyInput(LrsState* state) {
         // Test key, used to mess around
         LrsReplaceBytes(state, state->selection_offset_range.start, state->selection_offset_range.end - state->selection_offset_range.start, "pippò", 6);
         LrsMoveCaret(state, state->selection_offset_range.start + 5, false);
+    }
+}
+
+// Handle unicode character input and update the state accordingly.
+void LrsHandleCharInput(LrsState* state) {
+    int pressed_char;
+    while ((pressed_char = GetCharPressed()) != 0) {
+        char to_add[4];
+        int byte_count = LrsUTF8Encode(pressed_char, to_add);
+        if ((state->selection_offset_range.end - state->selection_offset_range.start) > 0) {
+            LrsReplaceBytes(
+                state,
+                state->selection_offset_range.start,
+                state->selection_offset_range.end - state->selection_offset_range.start,
+                to_add,
+                byte_count);
+            LrsMoveCaret(state, state->selection_offset_range.start + byte_count, false);
+        } else {
+            LrsInsertBytes(state, state->caret_offset, to_add, byte_count);
+            LrsMoveCaret(state, state->caret_offset + byte_count, false);
+        }
+    }
+}
+
+// Handle mouse input and update the state accordingly.
+void LrsHandleMouseInput(LrsState* state) {
+    bool shift_pressed = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+    // Mouse click to move the caret to a point
+    if (state->mouse_char_pos.x != -1) {
+        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            int mouse_offset = LrsGetOffsetFromCharPos(*state, state->mouse_char_pos);
+            printf("Mouse offset: %d, byte count: %d\n", mouse_offset, state->byte_count);
+            LrsMoveCaret(state, mouse_offset, state->selecting || shift_pressed);
+            if (!state->selecting) {
+                state->selecting = true;
+            }
+        }
+    }
+    if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+        state->selecting = false;
     }
 }
 
@@ -364,6 +429,9 @@ void LrsUpdateState(LrsState* state) {
         state->char_count = char_count;
         state->byte_count = offset;
     }
+    for (int i = 0; i < state->line_count; i++) {
+        printf ("Line %d, start offset: %d, length: %d\n", i+1, state->lines[i].start, state->lines[i].length);
+    }
     // Update selection
     if (state->selecting) {
         int mouse_offset = LrsGetOffsetFromCharPos(*state, state->mouse_char_pos);
@@ -374,41 +442,11 @@ void LrsUpdateState(LrsState* state) {
         }
     }
     // INPUT HANDLING
-    bool shift_pressed = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
-    // Mouse click to move the caret to a point
-    if (state->mouse_char_pos.x != -1) {
-        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-            int mouse_offset = LrsGetOffsetFromCharPos(*state, state->mouse_char_pos);
-            printf("Mouse offset: %d, byte count: %d\n", mouse_offset, state->byte_count);
-            LrsMoveCaret(state, mouse_offset, state->selecting || shift_pressed);
-            if (!state->selecting) {
-                state->selecting = true;
-            }
-        }
-    }
-    if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-        state->selecting = false;
-    }
+    LrsHandleMouseInput(state);
     // Handle pressed keys
     LrsHandleKeyInput(state);
     // Type characters
-    int pressed_char;
-    while ((pressed_char = GetCharPressed()) != 0) {
-        char to_add[4];
-        int byte_count = LrsUTF8Encode(pressed_char, to_add);
-        if ((state->selection_offset_range.end - state->selection_offset_range.start) > 0) {
-            LrsReplaceBytes(
-                state,
-                state->selection_offset_range.start,
-                state->selection_offset_range.end - state->selection_offset_range.start,
-                to_add,
-                byte_count);
-            LrsMoveCaret(state, state->selection_offset_range.start + byte_count, false);
-        } else {
-            LrsInsertBytes(state, state->caret_offset, to_add, byte_count);
-            LrsMoveCaret(state, state->caret_offset + byte_count, false);
-        }
-    }
+    LrsHandleCharInput(state);
 }
 
 // Draw the text box of the editor
@@ -460,5 +498,5 @@ void LrsDrawBottomBar(LrsState state) {
         }
     }
     //DrawTextEx(state.font, TextFormat("Selection range: (%d, %d)", state.selection_offset_range.start, state.selection_offset_range.end), (Vector2) { 4, h - 28 }, 24, SPACING, WHITE);
-    DrawTextEx(state.font, TextFormat("Blink start: %f", state.blink_start), (Vector2) { 4, h - 28 }, 24, SPACING, WHITE);
+    DrawTextEx(state.font, TextFormat("Alt pressed: %d", IsKeyDown(KEY_LEFT_ALT)), (Vector2) { 4, h - 28 }, 24, SPACING, WHITE);
 }

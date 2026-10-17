@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <math.h>
+#include <ctype.h>
 
 typedef struct {
     int start;
@@ -70,6 +71,10 @@ int LrsDeleteCharsBack(LrsState* state, int offset, int count);
 bool LrsIsKeyPressed(int key);
 // Handles key inputs (DEL/BACKSPACE/ARROW KEYS...) and updates the state accordingly
 void LrsHandleKeyInput(LrsState* state);
+// Handle unicode character input and update the state accordingly.
+void LrsHandleCharInput(LrsState* state);
+// Handle mouse input and update the state accordingly.
+void LrsHandleMouseInput(LrsState* state);
 // Update the editor state
 void LrsUpdateState(LrsState* state);
 // Draw the text box of the editor
