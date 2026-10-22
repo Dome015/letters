@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <ctype.h>
+#include <string.h>
 
 typedef struct {
     int start;
@@ -58,6 +59,11 @@ int LrsGetOffsetFromCharPos(LrsState state, IntVec2 char_pos);
 void LrsInsertBytes(LrsState* state, int offset, char* bytes, int size);
 // Replaces the bytes at the provided offset with the provided ones
 void LrsReplaceBytes(LrsState* state, int offset, int replaced_size, char* bytes, int size);
+// Replaces the current selection with the provided bytes, given their size.
+// If the selection is empty, it inserts the bytes at the current caret position.
+void LrsReplaceSelection(LrsState* state, char* bytes, int size);
+// Copy the bytes from the given offset up to the given size to the clipboard.
+void LrsCopyBytes(LrsState* state, int offset, int size);
 // Move cate to the specified target offset. If the flag is activated, the current selection is
 // extended to the new caret position.
 void LrsMoveCaret(LrsState* state, int target_offset, bool set_selection);
