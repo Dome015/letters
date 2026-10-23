@@ -6,8 +6,9 @@
 #define LRS_GREEN ((Color){ 55, 117, 0, 255 })
 
 LrsState LrsGetInitialState() {
+    Font font = LoadFontEx("assets/DMMono-Regular.ttf", FONT_SIZE * 2, 0, 250);
     return (LrsState) {
-        .font = LoadFontEx("assets/DMMono-Regular.ttf", FONT_SIZE * 2, 0, 250),
+        .font = font,
         .font_size = FONT_SIZE,
         .textbox_padding = 4,
         .dirty = true,
@@ -533,5 +534,5 @@ void LrsDrawBottomBar(LrsState state) {
             max_char_length = state.lines[i].char_length;
         }
     }
-    DrawTextEx(state.font, TextFormat("Caret offset: %d", state.caret_offset), (Vector2) { 4, h - 28 }, 24, SPACING, WHITE);
+    DrawTextEx(state.font, TextFormat("Caret offset: %d", state.caret_offset), (Vector2) { 4, h - 28 }, FONT_SIZE, SPACING, WHITE);
 }

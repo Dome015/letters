@@ -16,6 +16,7 @@ int main() {
 	printf("Offset: %d, line: %d\n", 61, LrsGetLineIndexFromPos(state, 61));
 	return 0;
 	#else
+	SetConfigFlags(FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_HIGHDPI);
 	InitWindow(600, 400, "Letters");
   SetWindowState(FLAG_WINDOW_RESIZABLE);
 	SetTargetFPS(60);
